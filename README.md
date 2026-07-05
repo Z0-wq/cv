@@ -1,2 +1,3 @@
 # cv
-Summer.26 practice 
+Self Study Visual Journey
+
