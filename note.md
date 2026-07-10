@@ -773,6 +773,285 @@ class ResidualBlock2(nn.Module):
 **易错总结：**
 - `def forward(self, x)` 漏写结尾冒号——`def`定义方法必须以冒号结尾，1.3学类时提过的规则在这里又出现一次
 
+### PyTorch框架入门——张量与自动求导（已掌握 2026-07-09）
+**例题与参考答案：**
+1. `requires_grad=True`的作用？→ 告诉PyTorch这个张量后面要参与求导，帮忙记住它经历的每一步运算
+2. `y=x²+2x`，`dy/dx`公式和x=3时的值？→ 公式`2x+2`，x=3时值为8（y本身=15）
+3. **编程题**：`x=torch.tensor(5.0,requires_grad=True)`，`y=3*x**2+1`，求`x.grad` →
+```python
+import torch
+
+x = torch.tensor(5.0, requires_grad=True)
+y = 3 * x**2 + 1
+y.backward()
+print(x.grad)   # 手算dy/dx=6x，x=5时=30，与代码结果核对一致
+```
+
+**关键点：**
+- 张量（Tensor）：PyTorch的数据容器，用法类似NumPy数组（`.shape`等概念相通），额外具备能在GPU上运行、能自动记录计算过程求导的能力
+- `x.cuda()`把张量搬到GPU；`x.numpy()`张量转NumPy数组，两者可互相转换
+- `requires_grad=True` + `.backward()`：PyTorch自动应用链式法则算出梯度（对应之前手动理解的反向传播），结果存在`.grad`属性里直接读取
+
+**易错总结：**
+- 无（本节回答基本准确，仅在"编程题要求手算验证"这一步骤上省略了主动核对，被提醒后确认理解）
+
+### PyTorch建模实战（已掌握 2026-07-10）
+**例题与参考答案：**
+1. `optimizer.zero_grad()`为什么每轮都要调用？→ PyTorch梯度默认会累加，不清零会导致梯度越来越大，每轮训练前必须先清零
+2. `loss.backward()`和`optimizer.step()`分别对应哪两个概念？→ `backward()`对应反向传播（用链式法则算梯度）；`step()`对应优化器/梯度下降（拿到梯度后真正更新参数），两者是先后独立的两个步骤
+3. **编程题**：`SimpleNet2`（20输入3输出），测试正向传播 →
+```python
+import torch
+import torch.nn as nn
+
+class SimpleNet2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(20, 3)
+    def forward(self, x):
+        return self.fc(x)
+
+model = SimpleNet2()
+x = torch.randn(5, 20)
+outputs = model(x)
+print(outputs.shape)   # torch.Size([5, 3])
+```
+
+**关键点：**
+- `nn.Linear(输入特征数,输出特征数)`：全连接层（5.1学的权重矩阵@输入+偏置），PyTorch自动创建权重和偏置参数
+- `nn.CrossEntropyLoss()`：分类常用损失函数；`torch.optim.Adam(model.parameters(), lr=...)`：优化器，`model.parameters()`是模型所有可学习参数
+- 训练循环固定顺序：`optimizer.zero_grad()`(清梯度) → `outputs=model(x)`(正向传播) → `loss=criterion(...)`(算loss) → `loss.backward()`(反向传播算梯度) → `optimizer.step()`(更新参数)
+- 保存/加载：`torch.save(model.state_dict(), 路径)`保存参数；加载时先造同结构空模型，再`model.load_state_dict(torch.load(路径))`填入参数
+
+**名词解释：**
+- `epoch`：把全部训练数据完整过一遍叫一个epoch
+- `model.parameters()`：模型里所有需要学习/更新的参数集合
+
+**易错总结：**
+- 实例化时用错类名（定义了`SimpleNet2`却创建`SimpleNet()`的实例）
+- 把训练循环相关内容（labels、epoch循环、optimizer.zero_grad()）混进只需要测试正向传播的任务里，其中`optimizer`还没定义会直接报错
+- `print(model.shape)`——把"模型本身"和"正向传播的输出结果"搞混，模型没有`.shape`，只有具体的张量数据才有，应打印`outputs.shape`
+
+### 训练技巧（已掌握 2026-07-10）
+**例题与参考答案：**
+1. Dropout为什么能对抗过拟合？→ 随机屏蔽一部分神经元，逼着模型不能依赖任何单一神经元，必须学会更普遍、更鲁棒的规律
+2. BatchNorm解决的核心问题？→ 每层输出数值范围忽大忽小导致训练不稳定难收敛；BatchNorm把数据拉回稳定范围（均值0方差1附近），让训练更快更稳
+3. **编程题**：`__init__`定义BatchNorm(8通道)和Dropout(0.3)，`forward`里依次经过conv→bn→dropout →
+```python
+class SimpleNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # self.conv 假设已存在
+        self.bn = nn.BatchNorm2d(8)
+        self.dropout = nn.Dropout(0.3)
+
+    def forward(self, x):
+        out = self.conv(x)
+        out = self.bn(out)
+        out = self.dropout(out)
+        return out
+```
+
+**关键点：**
+- 数据增强：对同一张图做随机翻转/旋转/裁剪/调亮度等，生成"变体"训练样本，减少过拟合
+- BatchNorm：把每层输出数据拉回稳定范围（均值0方差1附近），训练更快更稳
+- Dropout：训练时随机让一部分神经元输出变0，逼模型学更普遍的规律，专门对抗过拟合
+- 学习率调整策略：训练前期学习率大（快速接近答案），后期学习率变小（微调避免震荡）
+- **重要规则**：所有带参数的层（卷积/BatchNorm/Dropout等）必须在`__init__`里定义一次，`forward`只负责调用；若定义在`forward`里，每次正向传播都会重新创建全新随机初始化的层，无法正常训练，也无法被正确识别为模型的一部分
+
+**名词解释：**
+- `nn.BatchNorm2d(通道数)`：批归一化层，参数是对应输入的通道数
+- `nn.Dropout(丢弃率)`：丢弃率如0.3表示训练时随机让30%的神经元输出变0
+- `torch.optim.lr_scheduler.StepLR(optimizer, step_size=, gamma=)`：学习率调度器，每隔step_size个epoch把学习率乘以gamma
+
+**易错总结：**
+- 把BatchNorm和Dropout层定义在了`forward`方法里而不是`__init__`里——违反PyTorch核心规则，会导致每次正向传播都重新随机初始化这些层，无法正确训练
+- 定义了bn和dropout却没有真正调用它们处理数据，结尾又误用了上一节残差连接的`return out+x`模式，与本题要求的"conv→bn→dropout→返回"流程不符
+
+### 综合项目——CIFAR-10图像分类（已掌握 2026-07-10）
+
+**完整代码：**
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.fc1 = nn.Linear(32 * 8 * 8, 10)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = x.view(x.size(0), -1)
+        x = self.fc1(x)
+        return x
+
+model = SimpleCNN()
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+for epoch in range(2):
+    for images, labels in trainloader:
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+```
+
+**数据加载部分（配套用到的新工具）：**
+```python
+import torchvision
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+
+transform = transforms.ToTensor()    # 把图片转成PyTorch张量格式（图片原本是PIL图片对象，需要转成张量才能喂给模型）
+
+trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+# root是数据存放路径；train=True表示要训练集部分；download=True表示本地没有就自动下载；transform是刚定义的转换规则
+
+trainloader = DataLoader(trainset, batch_size=32, shuffle=True)
+# DataLoader把数据集包装成"一批一批"取数据的工具；batch_size=32表示每批32张图一起处理；shuffle=True表示每轮打乱顺序
+```
+为什么要"一批一批"（batch）处理，不是一张张处理：一次性把所有图片都塞给模型算梯度，内存吃不消，而且一张张算太慢、梯度也不稳定。batch是折中方案：每次拿一小批（比如32张）一起算，梯度更新更频繁也更稳定。
+
+---
+
+**逐行代码解析：**
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+```
+导入需要的库：torch本身、nn（各种层）、functional（提供ReLU等函数式写法）。
+
+```python
+class SimpleCNN(nn.Module):
+```
+定义一个叫`SimpleCNN`的类，继承`nn.Module`（1.3学的继承语法+5.4学的PyTorch固定写法）——这样PyTorch才能识别它是一个模型，自动管理里面的参数。
+
+```python
+    def __init__(self):
+        super().__init__()
+```
+构造方法，`super().__init__()`是PyTorch模型的固定写法，调用父类初始化，让内部机制正常工作。
+
+```python
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+```
+第一个卷积层：输入3通道（因为CIFAR-10是彩色图，RGB三通道），输出16通道（自己决定要提取多少种特征，16是常见的起始选择），核大小3×3，padding=1（3.4/5.3学过，padding让边缘信息不丢失，同时配合这个padding值，卷积后尺寸不会缩小）。
+
+```python
+        self.pool = nn.MaxPool2d(2, 2)
+```
+最大池化层（5.4学的），核2×2、步长2——每次池化后，图片长宽都变成一半。
+
+```python
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+```
+第二个卷积层：输入通道数16，必须跟上一层conv1的输出通道数对上（这是硬性规则——数据是一层一层往下传的，下一层的输入通道必须等于上一层的输出通道）。输出32通道（更深的层通常设置更多通道，捕捉更复杂的特征）。
+
+```python
+        self.fc1 = nn.Linear(32 * 8 * 8, 10)
+```
+全连接层，输出10（对应CIFAR-10的10个类别）。输入是`32*8*8`——这个数字是这样来的：CIFAR-10图片原始是32×32，经过一次池化（32→16），经过第二次池化（16→8），所以最后特征图尺寸是8×8，通道数32，展平后总共`32×8×8`个数字，这就是全连接层要接收的输入长度。
+
+```python
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+```
+数据流动：卷积→ReLU激活（5.1学的，不加激活函数叠再多层也没用）→池化，重复两次。
+
+```python
+        x = x.view(x.size(0), -1)
+```
+把卷积输出的多维特征图（形状类似`(批次数, 32, 8, 8)`）"拉平"成二维`(批次数, 32×8×8)`，因为全连接层只认一维向量，不能直接吃带高宽的多维数据。`x.size(0)`是批次数（保持不变），`-1`表示"剩下的维度全部压成一条"，PyTorch自动帮你算出这个数字。
+
+```python
+        x = self.fc1(x)
+        return x
+```
+过全连接层，得到10个类别的分数，返回。
+
+```python
+model = SimpleCNN()
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+```
+创建模型实例、损失函数、优化器——跟PyTorch建模实战学的完全一样的三行。
+
+```python
+for epoch in range(2):
+    for images, labels in trainloader:
+```
+外层循环控制训练几轮（这里2轮）；内层循环从`trainloader`里一批一批取数据，每次拿到这一批的图片`images`和对应标签`labels`。
+
+```python
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+```
+训练五步走：清梯度→正向传播→算loss→反向传播→更新参数，原样套用在每一批数据上。
+
+---
+
+**整体逻辑串讲（先懂大局，再看细节）：**
+
+整个事情要干什么：我们想做一个程序，让它"看一张图，猜出这是10个类别里的哪一个"。要做到这件事，只需要两步：
+1. **先造一个"猜测机器"**（也就是模型/`SimpleCNN`这个类）——这一步只是设计蓝图，告诉它"数据进来之后该怎么一步步处理"，但光有蓝图什么都不会发生
+2. **拿真实数据去"训练"这个机器**——让它看很多张"图+正确答案"，每看一次就微调一下自己内部的参数，猜得越来越准
+
+**为什么训练部分要放在最后**：必须先把"猜测机器"造出来（`class SimpleCNN`定义完，并且`model = SimpleCNN()`真的造出一个实例），损失函数和优化器也要提前准备好（这些是"训练时要用的工具"），这些准备工作必须在前面，"真正开始训练"这个动作自然只能放在最后——跟"`def`定义完不等于执行，必须调用才执行"是同一个道理：前面全是"准备"，训练循环才是"真正开始干活"。
+
+**epoch是什么，为什么要循环两层**：想象有一整套100张图片的"教材"。把这100张图全部看一遍，叫1个epoch。为什么要看好几遍（这里设的是2遍）：看一遍很可能学得不够好，就像人复习课本，看一遍记不住，多看几遍印象才深——训练模型也是这个道理，反复用同样的数据练习，模型才会越来越准。但100张图不能一次性全塞给模型算（电脑内存扛不住，效果也不好），所以要"一批一批"喂，比如每批32张——这就是`trainloader`做的事：把100张图拆成好几个"32张一批"的小份。所以两层循环的意思是：
+- 外层`for epoch in range(2)`：把整套教材（所有图片）从头看到尾，重复2遍
+- 内层`for images, labels in trainloader`：每遍看的时候，是一批一批（每批32张）看完的，`images`是这一批的图片，`labels`是这一批图片对应的正确答案
+
+**训练循环里那5行，用"做练习题"来比喻**：
+1. `optimizer.zero_grad()`：擦掉上一批练习题剩下的草稿纸痕迹——不擦的话，这次算的"错在哪"会跟上一批的混在一起，越滚越乱（PyTorch的梯度默认是累加的，必须先清空）
+2. `outputs = model(images)`：让"猜测机器"看这一批图片，说出它的猜测答案（正向传播）
+3. `loss = criterion(outputs, labels)`：拿机器猜的答案，跟真正正确的答案对比，算出"这次错得有多离谱"这个分数（loss，4.1学的概念）
+4. `loss.backward()`：根据"错得多离谱"，反推出机器内部每一个参数该往哪个方向调整（反向传播，链式法则，5.2学的）
+5. `optimizer.step()`：真正按照第4步算出的方向，把每个参数微调一点点（优化器真正动手改参数，5.2学的梯度下降）
+
+这5行是一个完整的"练习一批题→改正一次"的动作，内层循环让这个动作对着每一批数据都做一遍，外层循环让整个过程重复2轮（相当于把整套题再练一遍）。
+
+**`lr=0.001`是什么**：`lr` = learning rate（学习率，5.2学过）。控制第5步"调整参数"时，每次调整的步子有多大。0.001是个比较小、比较保守的步子——每次只微调一点点，不会因为一步迈太大而"矫枉过正"。这个数字是常见的经验默认值，不是必须精确等于这个。
+
+---
+
+**架构设计逻辑：为什么卷积→池化→卷积→池化→全连接**
+
+**为什么卷积和池化要交替堆叠**：第一层卷积核比较小（比如3×3），只能"看到"图片里很小一块区域，所以第一层提取的都是很局部、很基础的特征——比如某个方向的边缘、简单的颜色/纹理变化。池化把图片"压缩"变小（比如32×32变成16×16）。这样做完之后，下一层卷积虽然还是用同样大小的核（3×3），但因为图片本身变小了，这个3×3核相对能"看到"原图更大的一片区域——这就是感受野（5.4学的）在起作用：每叠一层（尤其配合池化），感受野越来越大。所以"第二层卷积"做的事，是在"第一层已经提取出的基础特征"之上，组合出更复杂、更抽象的模式——比如第一层看到的是"边缘"，第二层能看到"由几条边缘组成的形状/纹理"（比如猫耳朵的轮廓）。
+
+**类比人认猫的过程**：先看到一些零散的线条、色块（第一层卷积，局部、基础）→再把这些线条组合，看出"这是尖尖的耳朵形状""这是一片毛茸茸的纹理"（第二层卷积，范围更大、更抽象）→层数越深、池化次数越多，"看到的范围"越大，提取的特征越接近"整个物体的形状/类别"这种高层概念。所以卷积负责"由简单到复杂，一层一层挖掘更抽象的特征"，池化负责"压缩数据、同时帮下一层卷积间接扩大能看到的范围"——两者交替，是为了逐步从"像素级细节"走到"物体级概念"。
+
+**为什么最后要接全连接层**：前面的卷积+池化，做的事始终是局部性的——不管叠多少层，它关注的还是"图片某个区域长什么样"。但最终我们要的是一个全局判断：这整张图，到底是10个类别里的哪一个。全连接层的作用，就是把前面提取到的所有特征（不管是图片哪个区域提取出来的），全部汇总起来，综合考虑，给出一个最终的、针对整张图的判断——这也是为什么要先用`x.view()`把多维的特征图"拉平"成一条向量，因为全连接层要做的正是"不分区域，把所有特征放在一起统一权衡"。
+
+**一句话总结**：卷积+池化 = 局部特征提取器（从细节到抽象，逐步放大视野）；全连接层 = 全局决策器（把所有提取到的特征汇总，做出最终分类判断）。这就是为什么几乎所有图像分类CNN都是"卷积池化堆几层，最后接全连接"这个固定套路。
+
+---
+
+**最终理解确认：**
+
+整体就是建立一个机器，然后训练它的过程。在建立机器的过程中，先提取特征，再将其整合汇总。具体对应：
+- **`forward`的目的**：它就是"猜测机器"真正干活的说明书——定义了"一张图片进来，具体要经过哪些步骤（卷积→激活→池化→...→全连接），最后变成10个类别的分数"这个完整的加工流程。`__init__`里定义的`conv1`、`pool`、`fc1`只是"准备好的零件"，`forward`才是"把这些零件按顺序组装起来，真正让数据流过去"的地方。
+- **训练循环部分**：相当于开始用公式函数来训练——更精确地说，这一部分是真正让机器"变聪明"的过程：不是简单套公式算一次就完了，而是反复（每一批数据、每一个epoch）执行"猜一次→看错多少→算出往哪调→真正调一点点"，一轮一轮下来，模型内部的参数被持续微调，猜测就越来越准。
+
+**整体逻辑总结**：造机器（模型结构+forward）→ 准备训练工具（loss+optimizer）→ 反复喂数据让它变聪明（训练循环）。
+
+**易错总结：**
+- 本节综合项目难度陡增（涉及模型架构设计逻辑+完整训练流程），第一次讲解只做了逐行翻译，未讲清楚"整体在干什么、为什么这样排布代码顺序"，导致跟不上；后改为先讲整体目标和架构设计逻辑（为什么卷积池化交替、为什么最后接全连接、训练循环的"练习题"类比），再对应到具体代码行，理解才跟上——**这是一个通用的学习方法提示：遇到复杂综合代码，先搞懂整体在解决什么问题、大致分几步，再逐行看细节，而不是反过来**
+
 ## 类别2：数学基础
 （暂无）
 
