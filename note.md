@@ -1231,6 +1231,71 @@ cv2.destroyAllWindows()
 **易错总结：**
 - 数据集不上传的原因，第一次答成"保护训练成果不想公开"，混淆了"数据集"（多为他人整理的原始素材，有版权/体积问题）和"训练出的模型"（才是自己的成果）这两个不同概念
 
+## 类别8：进阶方向（主线A 部署实用向）
+
+### 模型量化（已掌握 2026-07-12）
+**例题与参考答案：**
+1. 量化的核心目的和代价？→ 目的：把参数从float32转成占用空间更小的格式(如int8)，让模型变小算得更快；代价：int8精度和数值范围远不如float32，模型判断精度会有一点下降
+2. float32转int8，模型体积缩小到原来的多少？→ 1/4（32位是8位的4倍）
+3. 训练后量化vs量化感知训练，哪个精度损失更小，为什么？→ 量化感知训练损失更小，因为训练时就提前模拟量化带来的误差，让模型自己适应；但流程更复杂
+
+**关键点：**
+- 量化本质：把模型参数从float32转换成更小的格式(如int8)，用精度换体积/速度（呼应4.1学过的类似权衡思路）
+- 训练后量化(Post-Training Quantization)：对训练好的模型直接转换，简单快但精度损失稍大
+- 量化感知训练(Quantization-Aware Training)：训练时提前模拟量化误差让模型适应，精度损失更小但流程复杂
+
+**名词解释：**
+- `torch.quantization.quantize_dynamic(model, {层类型}, dtype=)`：PyTorch动态量化（训练后量化的一种实现），可指定只量化哪类层
+- `model.eval()`：切换模型到评估模式（区别于训练模式），量化和推理时都需要先调用
+
+### ONNX模型导出与转换（已掌握 2026-07-12）
+**例题与参考答案：**
+1. 为什么PyTorch模型不能直接扔给边缘设备，中间要经过ONNX？→ 边缘设备SDK不直接支持PyTorch格式，各自有专用推理格式；ONNX是通用中间格式，大多数厂商工具链都认识，相当于"翻译中转站"，避免每个框架单独适配
+2. 为什么`torch.onnx.export()`需要dummy_input（假输入）？→ ONNX导出需要实际跑一遍模型记录数据流动路径，不是凭空转换代码文本
+3. **编程题**：`SimpleNet2`(输入20特征)导出ONNX并验证 →
+```python
+import torch
+
+model = SimpleNet2()
+model.load_state_dict(torch.load("model.pth"))
+model.eval()
+dummy_input = torch.randn(1, 20)
+
+torch.onnx.export(model, dummy_input, "my_model.onnx",
+                   input_names=["input"], output_names=["output"])
+
+import onnxruntime as ort
+import numpy as np
+
+session = ort.InferenceSession("my_model.onnx")
+input_data = np.random.randn(1, 20).astype(np.float32)
+outputs = session.run(None, {"input": input_data})
+print(outputs[0].shape)
+```
+
+**关键点：**
+- ONNX(Open Neural Network Exchange)：通用中间格式，PyTorch→ONNX→设备专用格式，是跨框架部署的必经桥梁
+- dummy_input形状必须跟真实模型输入完全匹配（这里`SimpleNet2`输入20特征，dummy_input就是`(1,20)`，不是图片的四维形状）
+- `onnxruntime`验证导出模型：`InferenceSession`加载，`.run(None, {输入名:数据})`用`export`时起的`input_names`对应的名字做推理
+
+**易错总结：**
+- 编程题模型和输入形状搞混：题目要求的是`SimpleNet2`(20特征一维输入)，第一次错用了阶段四的图片分类模型`SimpleCNN`及对应的四维图片形状`(1,3,20,20)`，两者的"20"含义完全不同（一个是特征数，一个是图片边长），需仔细核对题目指定的模型和输入结构
+- `np.float32`手误写成不存在的`np.float20`（已验证NumPy没有这个类型），要注意浮点类型的确切名称
+
+### TensorRT/设备专用推理优化（已掌握 2026-07-12）
+**例题与参考答案：**
+1. TensorRT适用于所有品牌边缘设备吗？→ 不是，专属于NVIDIA硬件（Jetson系列等）
+2. `--fp16`跟int8量化相比，速度和精度关系？→ 比int8慢，但保留更多精度（fp32最慢最精确，fp16折中，int8最快但精度损失最大）
+3. K230部署完整转换链路？→ PyTorch → ONNX → .kmodel（嘉楠专用格式）
+
+**关键点：**
+- TensorRT：NVIDIA专属推理加速引擎，把ONNX进一步优化（融合计算步骤、选择最优量化精度），比直接跑ONNX快很多
+- 部署优化本质思路：**通用格式(ONNX) → 设备厂商专用格式**，具体工具因硬件厂商而异（NVIDIA用TensorRT，K230用嘉楠自己的转换工具生成.kmodel）
+- 精度选项梯度：fp32(默认最精确最慢)→fp16(折中)→int8(最快最省空间,精度损失最大)
+
+**名词解释：**
+- `trtexec --onnx=文件 --saveEngine=文件 --fp16`：TensorRT自带命令行工具，把ONNX转成TensorRT专用`.engine`文件，`--fp16`指定用16位浮点精度优化
+
 ## 类别2：数学基础
 （暂无）
 
