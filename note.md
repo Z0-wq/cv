@@ -1166,6 +1166,71 @@ print(len(results[0].boxes.xyxy))
 **易错总结：**
 - 描述混淆矩阵"真实是cat预测成dog"这一格的含义时，把方向说反了（答成"把狗误判成猫"，正确应是"把猫误判成狗"）——读混淆矩阵格子时，行列对应的"真实/预测"顺序容易搞反，要仔细核对题目给的具体方向
 
+## 类别7：综合项目实战
+
+### 摄像头实时推理集成（已掌握 2026-07-11）
+**例题与参考答案：**
+1. "实时检测"的本质是什么？→ `while True`死循环反复"读一帧→检测→显示"，不是真的连续，是极快速地一帧一帧循环处理，快到人眼看起来是连续视频
+2. `while True`忘记写退出条件会怎样？→ 会永远卡在循环里出不来
+3. **编程题**：摄像头实时检测，每隔30帧打印一次检测到的物体数量 →
+```python
+import cv2
+from ultralytics import YOLO
+
+model = YOLO("yolo11n.pt")
+cap = cv2.VideoCapture(0)
+frame_count = 0
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    results = model(frame)
+    annotated_frame = results[0].plot()
+    cv2.imshow("YOLO实时检测", annotated_frame)
+
+    frame_count += 1
+    if frame_count % 30 == 0:
+        num_objects = len(results[0].boxes.xyxy)
+        print(f"当前检测到{num_objects}个物体")
+
+    if cv2.waitKey(30) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+**关键点：**
+- `cv2.VideoCapture(0)`打开默认摄像头；`cap.read()`每次读当前这一帧(`ret`是否成功,`frame`帧图片)
+- `results[0].plot()`把检测框画在帧上返回新图片（区别于`.show()`直接弹窗）
+- 计数器变量必须在循环**外面**初始化一次，在循环**里面**每轮递增，才能正确累计"第几帧"
+- `f"...{变量}..."`（f-string）：字符串前加f，大括号内可直接嵌入变量值，比逗号拼接print更直观
+- 用完摄像头资源要`cap.release()`释放，否则可能导致摄像头被占用
+
+**易错总结：**
+- 编程题最初完全遗漏本次新增要求（每隔30帧打印检测数量），只是照抄了上一轮的基础模板
+
+### 项目文档化与GitHub整理（已掌握 2026-07-12，含实操）
+**例题与参考答案：**
+1. `pip freeze > requirements.txt`里的`>`符号作用？→ 把命令输出内容写入指定文件（这里是把pip freeze列出的所有库写进requirements.txt）
+2. 为什么不建议把整个训练数据集传到GitHub？→ 体积大导致clone很慢；很多数据集有版权/授权协议不一定能重新分发；更规范做法是在README里写清楚数据集下载来源，而不是自己重复上传
+
+**关键点：**
+- `README.md`：项目门面，包含项目说明、功能、环境要求、使用方法、效果展示
+- `requirements.txt`：用`pip freeze > requirements.txt`自动生成，记录所有依赖库及版本；别人用`pip install -r requirements.txt`一键装好依赖
+- **真实踩坑**：网络问题手动下载wheel文件本地安装的库（如torch/torchvision），`pip freeze`会记录成本地临时文件路径（`torch @ file:///C:/Users/...`），这种记录别人电脑上路径不存在会导致安装失败，需手动改成正常版本号声明（`torch==2.6.0`）；GPU版本因需匹配各自显卡，不适合靠requirements.txt自动装，应在README里单独说明
+- `.gitignore`：排除不该上传的内容——模型权重文件(体积大且可自动重新下载)、数据集(体积大+版权问题)、个人截图笔记附件、无内容的临时测试文件、内部工具目录等
+- 代码结构规范化：不把所有代码堆一个文件，分主程序/模型/数据/工具函数等目录
+
+**实操记录：**
+- 已实际执行`pip freeze`生成完整依赖列表（119个库），确认`torch`/`opencv-python`/`ultralytics`均在列表中
+- 已实际生成并修正`requirements.txt`（修复本地路径问题）、编写`.gitignore`（排除note.assets/yolo11n.pt/test.py/.spec-workflow等）、重写`README.md`（项目说明+使用方法+效果展示）
+
+**易错总结：**
+- 数据集不上传的原因，第一次答成"保护训练成果不想公开"，混淆了"数据集"（多为他人整理的原始素材，有版权/体积问题）和"训练出的模型"（才是自己的成果）这两个不同概念
+
 ## 类别2：数学基础
 （暂无）
 
